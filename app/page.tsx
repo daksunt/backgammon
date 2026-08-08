@@ -12,6 +12,7 @@ import {
   canBearOff,
   chooseAiMove,
   cloneGame,
+  expandDice,
   initialGame,
   opponent,
   pipCount,
@@ -288,7 +289,18 @@ export default function Home() {
 
   const top = [12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23];
   const bottom = [11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0];
+  const rivalName = settings.difficulty === "easy" ? "Mira" : settings.difficulty === "hard" ? "Kaspar" : "Arden";
   const resultPoints = game.winner ? victoryPoints(game, game.winner) : 0;
+  const rolledPlays = expandDice(game.dice, settings.powerRepeats);
+  const remainingByValue = game.remaining.reduce<Record<number, number>>((counts, die) => {
+    counts[die] = (counts[die] ?? 0) + 1;
+    return counts;
+  }, {});
+  const totalByValue = rolledPlays.reduce<Record<number, number>>((counts, die) => {
+    counts[die] = (counts[die] ?? 0) + 1;
+    return counts;
+  }, {});
+  const shownByValue: Record<number, number> = {};
   const bearOffRoute = destinationRoutes.get("off");
   const bearingOffOpen = canBearOff(game, "human");
   const pointButton = (index: number, position: "top" | "bottom", visualIndex: number) => {
@@ -317,12 +329,19 @@ export default function Home() {
         <button className="new-match" onClick={() => setScreen("setup")}>NEW MATCH</button>
       </nav>
       <section className="play-layout">
-        <aside className="player-card rival">
-          <div className="player-head"><span className="avatar">R</span><div><small>YOUR RIVAL</small><h2>{settings.difficulty === "easy" ? "Mira" : settings.difficulty === "hard" ? "Kaspar" : "Arden"}</h2></div><i className={game.turn === "ai" ? "status live" : "status"} /></div>
-          <div className="metric"><span>PIP COUNT</span><b>{pipCount(game, "ai")}</b></div>
-          <div className="metric"><span>BAR / HOME</span><b>{game.bar.ai} <em>/</em> {game.off.ai}</b></div>
-          <div className="difficulty-badge">{settings.difficulty.toUpperCase()} AI</div>
-          {game.turn === "ai" && <p className="thinking"><i /><i /><i /> considering the table</p>}
+        <aside className="players-column" aria-label="Players">
+          <section className="player-card rival">
+            <div className="player-head"><span className="avatar">R</span><div><small>YOUR RIVAL</small><h2>{rivalName}</h2></div><i className={game.turn === "ai" ? "status live" : "status"} /></div>
+            <div className="metric"><span>PIP COUNT</span><b>{pipCount(game, "ai")}</b></div>
+            <div className="metric"><span>BAR / HOME</span><b>{game.bar.ai} <em>/</em> {game.off.ai}</b></div>
+            <div className="difficulty-badge">{settings.difficulty.toUpperCase()} AI</div>
+            {game.turn === "ai" && <p className="thinking"><i /><i /><i /> considering the table</p>}
+          </section>
+          <section className="player-card human-card">
+            <div className="player-head you"><span className="avatar">Y</span><div><small>PLAYING AS</small><h2>You</h2></div><i className={game.turn === "human" ? "status live" : "status"} /></div>
+            <div className="metric"><span>PIP COUNT</span><b>{pipCount(game, "human")}</b></div>
+            <div className="metric"><span>BAR / HOME</span><b>{game.bar.human} <em>/</em> {game.off.human}</b></div>
+          </section>
         </aside>
 
         <section className="table-wrap">
@@ -336,12 +355,7 @@ export default function Home() {
               <span className={selectedSource !== null ? "current" : ""}><b>3</b> Select destination</span>
             </div>
             <div className="dice-controls">
-              {game.turn === "human" && !game.dice.length && !game.winner && settings.deterministic && <button className="roll-button primary-roll" onClick={() => roll("human")}><span>ROLL</span> SELECTED DICE</button>}
-              {game.turn === "human" && !game.dice.length && !game.winner && !settings.deterministic && <div className="auto-roll-status"><i /><strong>Rolling automatically…</strong></div>}
               {game.turn === "human" && game.remaining.length > 0 && <>
-                <div className="dice-choice" aria-label="Available dice">
-                  {game.remaining.map((die, index) => <DieFace key={`${die}-${index}`} value={die} label={`Available die ${die}`} />)}
-                </div>
                 <div className="move-instruction">
                   {selectedSource !== null ? <><strong>Now choose the destination</strong><span>Every reachable final point is marked in teal. Dice and captures are handled automatically.</span></> : <><strong>Select any marked checker</strong><span>We will show every place it can reach using any dice combination.</span></>}
                 </div>
@@ -376,10 +390,17 @@ export default function Home() {
           </div>
         </section>
 
-        <aside className="control-card">
-          <div className="player-head you"><span className="avatar">Y</span><div><small>PLAYING AS</small><h2>You</h2></div><i className={game.turn === "human" ? "status live" : "status"} /></div>
-          <div className="metric"><span>PIP COUNT</span><b>{pipCount(game, "human")}</b></div>
-          <div className="metric"><span>BAR / HOME</span><b>{game.bar.human} <em>/</em> {game.off.human}</b></div>
+        <aside className="control-card dice-sidebar" aria-label="Dice results and controls">
+          <div className="dice-result-heading"><span>DICE RESULTS</span><small>{game.dice.length ? `${game.remaining.length} ${game.remaining.length === 1 ? "play" : "plays"} left` : "Waiting for roll"}</small></div>
+          <div className="sidebar-dice" aria-label="Rolled dice and remaining plays">
+            {rolledPlays.length ? rolledPlays.map((die, index) => {
+              shownByValue[die] = (shownByValue[die] ?? 0) + 1;
+              const spent = shownByValue[die] <= totalByValue[die] - (remainingByValue[die] ?? 0);
+              return <DieFace key={`${die}-${index}`} value={die} spent={spent} label={`${spent ? "Used" : "Available"} die ${die}`} />;
+            }) : <div className="dice-placeholder"><i /><i /><strong>{game.turn === "human" ? "Your roll is next" : `${rivalName} is rolling`}</strong></div>}
+          </div>
+          {game.turn === "human" && !game.dice.length && !game.winner && settings.deterministic && <button className="roll-button primary-roll sidebar-roll" onClick={() => roll("human")}><span>ROLL</span> SELECTED DICE</button>}
+          {game.turn === "human" && !game.dice.length && !game.winner && !settings.deterministic && <div className="auto-roll-status sidebar-auto-roll"><i /><strong>Rolling automatically…</strong></div>}
           {settings.deterministic && <div className="director-panel"><div><span>DIRECTOR DICE</span><small>Set the next rolls</small></div>{presetEditor("human", humanPreset, setHumanPreset)}{presetEditor("ai", aiPreset, setAiPreset)}</div>}
           {settings.undo && <div className="undo-panel"><button onClick={undoMove} disabled={!moveHistory.length}>↶ <span>UNDO MOVE</span></button><button onClick={undoTurn} disabled={!turnHistory.length}>↶ <span>UNDO TURN</span></button></div>}
           <div className="rules-note"><span>i</span><p><b>{settings.customDice ? `${settings.humanDice} vs ${settings.aiDice} dice` : "Classic dice"}</b>{settings.powerRepeats ? "Power repeats are on." : "Standard rolls."} Bar entry always comes first.</p></div>
