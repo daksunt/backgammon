@@ -217,10 +217,23 @@ function buildQuickRoute(game: GameState, player: Player, dice: number[], source
 
 type RouteOption = { to: number | "off"; moves: Move[]; hits: number };
 
+function prefersRoute(candidate: RouteOption, existing: RouteOption) {
+  if (candidate.hits !== existing.hits) return candidate.hits > existing.hits;
+  const candidateDice = candidate.moves.map((move) => move.die);
+  const existingDice = existing.moves.map((move) => move.die);
+  const length = Math.max(candidateDice.length, existingDice.length);
+  for (let index = 0; index < length; index += 1) {
+    const candidateDie = candidateDice[index] ?? 0;
+    const existingDie = existingDice[index] ?? 0;
+    if (candidateDie !== existingDie) return candidateDie > existingDie;
+  }
+  return candidate.moves.length < existing.moves.length;
+}
+
 function allRoutesFromSource(game: GameState, player: Player, source: number | "bar"): RouteOption[] {
   const bestByDestination = new Map<string, RouteOption>();
   const visit = (preview: GameState, currentSource: number | "bar", route: Move[], hits: number) => {
-    for (const die of uniqueDice(preview.remaining)) {
+    for (const die of uniqueDice(preview.remaining).sort((a, b) => b - a)) {
       const move = legalMovesForDie(preview, player, die).find((candidate) => candidate.from === currentSource);
       if (!move) continue;
       const moves = [...route, move];
@@ -228,7 +241,7 @@ function allRoutesFromSource(game: GameState, player: Player, source: number | "
       const option: RouteOption = { to: move.to, moves, hits: nextHits };
       const key = String(move.to);
       const existing = bestByDestination.get(key);
-      if (!existing || option.hits > existing.hits || (option.hits === existing.hits && option.moves.length > existing.moves.length)) {
+      if (!existing || prefersRoute(option, existing)) {
         bestByDestination.set(key, option);
       }
       if (move.to !== "off") {
@@ -460,7 +473,8 @@ export default function Home() {
       }
       if (!next.winner) {
         const distance = moves.reduce((total, move) => total + move.die, 0);
-        next.message = `You moved ${distance} in one route${hits ? ` and captured ${hits} checker${hits > 1 ? "s" : ""}` : ""}.`;
+        const combination = moves.map((move) => move.die).join(" + ");
+        next.message = `You used ${combination} to move ${distance} spaces${hits ? ` and captured ${hits} checker${hits > 1 ? "s" : ""}` : ""}.`;
         if (next.remaining.length === 0 || !anyLegalMove(next, "human")) next = endTurn(next);
       }
       setSelectedSource(null);
@@ -590,9 +604,11 @@ export default function Home() {
   const pointButton = (index: number, position: "top" | "bottom", visualIndex: number) => {
     const point = game.points[index];
     const canMove = routeSources.has(index);
-    const landsHere = routeDestinations.has(index);
+    const landingRoute = destinationRoutes.get(index);
+    const landsHere = Boolean(landingRoute);
     const isSelected = selectedSource === index;
-    return <button key={index} className={`board-point ${position} ${visualIndex % 2 ? "dark" : "light"} ${canMove ? "source" : ""} ${isSelected ? "selected-source" : ""} ${landsHere ? "landing" : ""}`} onClick={() => handlePoint(index)} aria-label={`Point ${index + 1}, ${point.count} ${point.owner ?? "empty"}${canMove ? ", selectable checker" : ""}${landsHere ? ", reachable destination" : ""}`}><span className="triangle" /><CheckerStack point={point} selected={isSelected} />{canMove && !landsHere && <span className="move-badge">{isSelected ? "SELECTED" : "SELECT PIECE"}</span>}{landsHere && <span className="landing-badge">MOVE HERE</span>}<small>{index + 1}</small></button>;
+    const diceLabel = landingRoute?.moves.map((move) => move.die).join(" + ");
+    return <button key={index} className={`board-point ${position} ${visualIndex % 2 ? "dark" : "light"} ${canMove ? "source" : ""} ${isSelected ? "selected-source" : ""} ${landsHere ? "landing" : ""}`} onClick={() => handlePoint(index)} aria-label={`Point ${index + 1}, ${point.count} ${point.owner ?? "empty"}${canMove ? ", selectable checker" : ""}${landsHere ? `, reachable using ${diceLabel}` : ""}`}><span className="triangle" /><CheckerStack point={point} selected={isSelected} />{canMove && !landsHere && <span className="move-badge">{isSelected ? "SELECTED" : "SELECT PIECE"}</span>}{landsHere && <span className="landing-badge">MOVE HERE <b>{diceLabel}</b></span>}<small>{index + 1}</small></button>;
   };
 
   const presetEditor = (player: Player, values: number[], setValues: (values: number[]) => void) => (
@@ -649,7 +665,7 @@ export default function Home() {
             <div className="board top-row">{top.slice(0, 6).map((n, i) => pointButton(n, "top", i))}<div className="bar-lane"><button className={`bar-checkers ai ${routeSources.has("bar") ? "source" : ""} ${selectedSource === "bar" ? "selected" : ""}`} onClick={handleBar}>{game.bar.ai > 0 && <><i />{game.bar.ai > 1 && <b>{game.bar.ai}</b>}</>}</button></div>{top.slice(6).map((n, i) => pointButton(n, "top", i + 6))}</div>
             <div className="board-mid"><span>{game.off.ai} OFF</span><b>BACKGAMMON</b><span>{game.off.human} OFF</span></div>
             <div className="board bottom-row">{bottom.slice(0, 6).map((n, i) => pointButton(n, "bottom", i))}<div className="bar-lane"><button className={`bar-checkers human ${routeSources.has("bar") ? "source" : ""} ${selectedSource === "bar" ? "selected" : ""}`} onClick={handleBar}>{game.bar.human > 0 && <><i />{game.bar.human > 1 && <b>{game.bar.human}</b>}</>}</button></div>{bottom.slice(6).map((n, i) => pointButton(n, "bottom", i + 6))}</div>
-            {routeDestinations.has("off") && <button className="route-off-preview" onClick={handleOffDestination}><b>BEAR OFF HERE</b><span>Final destination</span></button>}
+            {routeDestinations.has("off") && <button className="route-off-preview" onClick={handleOffDestination}><b>BEAR OFF HERE</b><span>Uses {destinationRoutes.get("off")?.moves.map((move) => move.die).join(" + ")}</span></button>}
             {game.winner && <div className="victory-card" role="status">
               <span>{victoryName(resultPoints)}</span>
               <h2>{PLAYER_LABEL[game.winner]} win!</h2>

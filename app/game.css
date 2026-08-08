@@ -109,6 +109,7 @@ fieldset legend { color: #718079; margin-bottom: 9px; }
 .move-badge, .landing-badge { position: absolute; z-index: 8; left: 50%; transform: translateX(-50%); white-space: nowrap; padding: 4px 6px; font-size: 6px; font-weight: 800; letter-spacing: .08em; pointer-events: none; box-shadow: 0 3px 7px rgba(0,0,0,.24); }
 .move-badge { background: #fff7e4; color: #9e3f27; border: 2px solid #c95939; }
 .landing-badge { background: #baf2d6; color: #103b2f; border: 2px solid #187052; }
+.landing-badge b { margin-left: 3px; padding-left: 5px; border-left: 1px solid rgba(16,59,47,.35); font-size: 7px; }
 .top .move-badge { bottom: 29px; }.bottom .move-badge { top: 29px; }
 .top .landing-badge { bottom: 51px; }.bottom .landing-badge { top: 51px; }
 .board-point.landing::before { content: ''; position: absolute; inset: 8px 3px; z-index: 4; border: 4px dashed #1f8a66; background: rgba(186,242,214,.27); box-shadow: inset 0 0 22px rgba(59,190,140,.55); pointer-events: none; animation: landing-pulse .8s ease-in-out infinite alternate; }
