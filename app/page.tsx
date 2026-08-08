@@ -304,6 +304,22 @@ function pipCount(game: GameState, player: Player) {
   return total;
 }
 
+function victoryPoints(game: GameState, winner: Player) {
+  const loser = opponent(winner);
+  if (game.off[loser] > 0) return 1;
+  const loserInWinnersHome = game.bar[loser] > 0 || game.points.some((point, index) => {
+    if (point.owner !== loser) return false;
+    return winner === "human" ? index <= 5 : index >= 18;
+  });
+  return loserInWinnersHome ? 3 : 2;
+}
+
+function victoryName(points: number) {
+  if (points === 3) return "BACKGAMMON";
+  if (points === 2) return "MARS · GAMMON";
+  return "SINGLE WIN";
+}
+
 function DieFace({ value, active, spent, onClick, label, order }: { value: number; active?: boolean; spent?: boolean; onClick?: () => void; label?: string; order?: number }) {
   const dots: Record<number, number[]> = { 1: [4], 2: [0, 8], 3: [0, 4, 8], 4: [0, 2, 6, 8], 5: [0, 2, 4, 6, 8], 6: [0, 2, 3, 5, 6, 8] };
   return (
@@ -505,11 +521,12 @@ export default function Home() {
     if (!game.winner || scoreRecorded.current) return;
     scoreRecorded.current = true;
     setMatchScore((score) => {
-      const next = { ...score, [game.winner!]: score[game.winner!] + 1 };
+      const points = victoryPoints(game, game.winner!);
+      const next = { ...score, [game.winner!]: score[game.winner!] + points };
       try { window.localStorage.setItem("backgammon-studio-score", JSON.stringify(next)); } catch { /* local-only persistence is optional */ }
       return next;
     });
-  }, [game.winner]);
+  }, [game]);
 
   const startMatch = () => {
     scoreRecorded.current = false;
@@ -569,6 +586,7 @@ export default function Home() {
 
   const top = [12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23];
   const bottom = [11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0];
+  const resultPoints = game.winner ? victoryPoints(game, game.winner) : 0;
   const pointButton = (index: number, position: "top" | "bottom", visualIndex: number) => {
     const point = game.points[index];
     const canMove = routeSources.has(index);
@@ -632,6 +650,13 @@ export default function Home() {
             <div className="board-mid"><span>{game.off.ai} OFF</span><b>BACKGAMMON</b><span>{game.off.human} OFF</span></div>
             <div className="board bottom-row">{bottom.slice(0, 6).map((n, i) => pointButton(n, "bottom", i))}<div className="bar-lane"><button className={`bar-checkers human ${routeSources.has("bar") ? "source" : ""} ${selectedSource === "bar" ? "selected" : ""}`} onClick={handleBar}>{game.bar.human > 0 && <><i />{game.bar.human > 1 && <b>{game.bar.human}</b>}</>}</button></div>{bottom.slice(6).map((n, i) => pointButton(n, "bottom", i + 6))}</div>
             {routeDestinations.has("off") && <button className="route-off-preview" onClick={handleOffDestination}><b>BEAR OFF HERE</b><span>Final destination</span></button>}
+            {game.winner && <div className="victory-card" role="status">
+              <span>{victoryName(resultPoints)}</span>
+              <h2>{PLAYER_LABEL[game.winner]} win!</h2>
+              <strong>+{resultPoints} {resultPoints === 1 ? "POINT" : "POINTS"}</strong>
+              <p>{resultPoints === 3 ? "The loser bore off nothing and still had a checker in the winner’s home board or on the bar." : resultPoints === 2 ? "The loser did not bear off a single checker." : "Both players bore off at least one checker."}</p>
+              <button onClick={startMatch}>PLAY NEXT GAME</button>
+            </div>}
           </div>
           <div className="borne-off-row" aria-label="Borne-off checker totals">
             <section className="off-tray rival-off">

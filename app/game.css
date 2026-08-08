@@ -129,6 +129,12 @@ fieldset legend { color: #718079; margin-bottom: 9px; }
 .bear-off-target { position: absolute; right: -88px; bottom: 8%; padding: 10px; background: var(--green); color: white; border: 0; font-size: 8px; letter-spacing: .12em; font-weight: 700; cursor: pointer; }
 .route-off-preview { position: absolute; right: -104px; bottom: 8%; width: 92px; padding: 11px 8px; background: #baf2d6; color: #103b2f; border: 3px solid #187052; box-shadow: 0 7px 17px rgba(15,59,47,.23); text-align: center; z-index: 9; cursor: pointer; }
 .route-off-preview b, .route-off-preview span { display: block; }.route-off-preview b { font-size: 9px; letter-spacing: .1em; }.route-off-preview span { margin-top: 2px; font-size: 7px; }
+.victory-card { position: absolute; z-index: 20; left: 50%; top: 50%; transform: translate(-50%,-50%); width: min(360px, 72%); padding: 24px 26px; background: rgba(255,250,240,.97); color: var(--ink); border: 3px solid var(--rust); box-shadow: 0 18px 55px rgba(39,24,17,.42); text-align: center; }
+.victory-card > span { color: var(--rust); font-size: 9px; letter-spacing: .2em; font-weight: 900; }
+.victory-card h2 { margin: 5px 0 3px; font: 700 30px 'Playfair Display'; }
+.victory-card > strong { display: inline-block; margin: 5px 0; padding: 6px 12px; background: var(--green); color: white; font-size: 12px; letter-spacing: .12em; }
+.victory-card p { max-width: 295px; margin: 9px auto 14px; color: #68756f; font-size: 9px; line-height: 1.5; }
+.victory-card button { border: 0; background: var(--rust); color: white; padding: 11px 17px; font-size: 8px; font-weight: 900; letter-spacing: .12em; cursor: pointer; }
 .borne-off-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
 .off-tray { min-height: 59px; border: 1px solid rgba(23,41,35,.2); background: rgba(255,250,240,.72); padding: 8px 11px; display: grid; grid-template-columns: 105px 1fr; align-items: center; gap: 10px; }
 .off-tray.your-off { border: 2px solid #285d4e; background: #edf5f0; }
