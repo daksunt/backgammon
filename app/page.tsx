@@ -601,6 +601,8 @@ export default function Home() {
   const top = [12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23];
   const bottom = [11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0];
   const resultPoints = game.winner ? victoryPoints(game, game.winner) : 0;
+  const bearOffRoute = destinationRoutes.get("off");
+  const bearingOffOpen = canBearOff(game, "human");
   const pointButton = (index: number, position: "top" | "bottom", visualIndex: number) => {
     const point = game.points[index];
     const canMove = routeSources.has(index);
@@ -665,7 +667,6 @@ export default function Home() {
             <div className="board top-row">{top.slice(0, 6).map((n, i) => pointButton(n, "top", i))}<div className="bar-lane"><button className={`bar-checkers ai ${routeSources.has("bar") ? "source" : ""} ${selectedSource === "bar" ? "selected" : ""}`} onClick={handleBar}>{game.bar.ai > 0 && <><i />{game.bar.ai > 1 && <b>{game.bar.ai}</b>}</>}</button></div>{top.slice(6).map((n, i) => pointButton(n, "top", i + 6))}</div>
             <div className="board-mid"><span>{game.off.ai} OFF</span><b>BACKGAMMON</b><span>{game.off.human} OFF</span></div>
             <div className="board bottom-row">{bottom.slice(0, 6).map((n, i) => pointButton(n, "bottom", i))}<div className="bar-lane"><button className={`bar-checkers human ${routeSources.has("bar") ? "source" : ""} ${selectedSource === "bar" ? "selected" : ""}`} onClick={handleBar}>{game.bar.human > 0 && <><i />{game.bar.human > 1 && <b>{game.bar.human}</b>}</>}</button></div>{bottom.slice(6).map((n, i) => pointButton(n, "bottom", i + 6))}</div>
-            {routeDestinations.has("off") && <button className="route-off-preview" onClick={handleOffDestination}><b>BEAR OFF HERE</b><span>Uses {destinationRoutes.get("off")?.moves.map((move) => move.die).join(" + ")}</span></button>}
             {game.winner && <div className="victory-card" role="status">
               <span>{victoryName(resultPoints)}</span>
               <h2>{PLAYER_LABEL[game.winner]} win!</h2>
@@ -679,10 +680,11 @@ export default function Home() {
               <div className="off-tray-title"><span>RIVAL HOME</span><strong>{game.off.ai}<small>/15</small></strong></div>
               <div className="off-slots" aria-label={`${game.off.ai} rival checkers borne off`}>{Array.from({ length: 15 }, (_, index) => <i key={index} className={index < game.off.ai ? "filled" : ""} />)}</div>
             </section>
-            <section className="off-tray your-off">
+            <button type="button" className={`off-tray your-off ${bearOffRoute ? "can-bear" : ""}`} onClick={handleOffDestination} disabled={!bearOffRoute} aria-label={bearOffRoute ? `Bear off using ${bearOffRoute.moves.map((move) => move.die).join(" plus ")}` : `${game.off.human} of your checkers borne off`}>
               <div className="off-tray-title"><span>YOUR HOME</span><strong>{game.off.human}<small>/15</small></strong></div>
               <div className="off-slots" aria-label={`${game.off.human} of your checkers borne off`}>{Array.from({ length: 15 }, (_, index) => <i key={index} className={index < game.off.human ? "filled" : ""} />)}</div>
-            </section>
+              {bearOffRoute ? <span className="off-action"><b>BEAR OFF HERE</b> Uses {bearOffRoute.moves.map((move) => move.die).join(" + ")}</span> : bearingOffOpen && <span className="home-ready">BEARING OFF IS OPEN · SELECT A CHECKER</span>}
+            </button>
           </div>
         </section>
 
