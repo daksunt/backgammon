@@ -215,6 +215,32 @@ function buildQuickRoute(game: GameState, player: Player, dice: number[], source
   return route.length ? route : null;
 }
 
+type RouteOption = { to: number | "off"; moves: Move[]; hits: number };
+
+function allRoutesFromSource(game: GameState, player: Player, source: number | "bar"): RouteOption[] {
+  const bestByDestination = new Map<string, RouteOption>();
+  const visit = (preview: GameState, currentSource: number | "bar", route: Move[], hits: number) => {
+    for (const die of uniqueDice(preview.remaining)) {
+      const move = legalMovesForDie(preview, player, die).find((candidate) => candidate.from === currentSource);
+      if (!move) continue;
+      const moves = [...route, move];
+      const nextHits = hits + (move.hit ? 1 : 0);
+      const option: RouteOption = { to: move.to, moves, hits: nextHits };
+      const key = String(move.to);
+      const existing = bestByDestination.get(key);
+      if (!existing || option.hits > existing.hits || (option.hits === existing.hits && option.moves.length > existing.moves.length)) {
+        bestByDestination.set(key, option);
+      }
+      if (move.to !== "off") {
+        const next = applyMove(preview, player, move);
+        if (!next.winner) visit(next, move.to, moves, nextHits);
+      }
+    }
+  };
+  visit(game, source, [], 0);
+  return [...bestByDestination.values()];
+}
+
 function expandDice(raw: number[], powerRepeats: boolean) {
   if (!powerRepeats) return raw;
   const counts = raw.reduce<Record<number, number>>((all, die) => ({ ...all, [die]: (all[die] || 0) + 1 }), {});
@@ -352,7 +378,7 @@ export default function Home() {
   const [screen, setScreen] = useState<"setup" | "game">("setup");
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   const [game, setGame] = useState<GameState>(() => initialGame());
-  const [selectedDice, setSelectedDice] = useState<number[]>([]);
+  const [selectedSource, setSelectedSource] = useState<number | "bar" | null>(null);
   const [humanPreset, setHumanPreset] = useState([6, 3, 4, 2]);
   const [aiPreset, setAiPreset] = useState([5, 2, 3, 1]);
   const [moveHistory, setMoveHistory] = useState<GameState[]>([]);
@@ -363,28 +389,25 @@ export default function Home() {
   const scoreRecorded = useRef(false);
 
   const diceCount = (player: Player) => settings.customDice ? (player === "human" ? settings.humanDice : settings.aiDice) : 2;
-  const selectedValues = selectedDice.map((index) => game.remaining[index]).filter((die): die is number => die !== undefined);
   const routePreview = useMemo(() => {
-    const sources = new Set<number | "bar">();
-    const destinations = new Set<number | "off">();
-    if (game.turn !== "human" || !selectedValues.length) return { sources, destinations };
-    const barRoute = buildQuickRoute(game, "human", selectedValues, "bar");
-    if (barRoute) {
-      sources.add("bar");
-      destinations.add(barRoute.at(-1)!.to);
+    const sourceRoutes = new Map<number | "bar", RouteOption[]>();
+    if (game.turn !== "human" || !game.remaining.length) return sourceRoutes;
+    if (game.bar.human > 0) {
+      const routes = allRoutesFromSource(game, "human", "bar");
+      if (routes.length) sourceRoutes.set("bar", routes);
+      return sourceRoutes;
     }
     game.points.forEach((point, index) => {
       if (point.owner !== "human") return;
-      const route = buildQuickRoute(game, "human", selectedValues, index);
-      if (route) {
-        sources.add(index);
-        destinations.add(route.at(-1)!.to);
-      }
+      const routes = allRoutesFromSource(game, "human", index);
+      if (routes.length) sourceRoutes.set(index, routes);
     });
-    return { sources, destinations };
-  }, [game, selectedValues]);
-  const routeSources = routePreview.sources;
-  const routeDestinations = routePreview.destinations;
+    return sourceRoutes;
+  }, [game]);
+  const routeSources = new Set(routePreview.keys());
+  const selectedRoutes = selectedSource === null ? [] : routePreview.get(selectedSource) ?? [];
+  const destinationRoutes = new Map(selectedRoutes.map((route) => [route.to, route]));
+  const routeDestinations = new Set(destinationRoutes.keys());
 
   const endTurn = useCallback((current: GameState) => {
     if (current.winner) return current;
@@ -395,7 +418,7 @@ export default function Home() {
     next.turnNumber += 1;
     next.message = `${PLAYER_LABEL[next.turn]} to roll.`;
     turnStart.current = null;
-    setSelectedDice([]);
+    setSelectedSource(null);
     return next;
   }, []);
 
@@ -406,11 +429,10 @@ export default function Home() {
       if (!next.winner && (next.remaining.length === 0 || !anyLegalMove(next, player))) next = endTurn(next);
       return next;
     });
-    setSelectedDice([]);
+    setSelectedSource(null);
   }, [endTurn]);
 
   const performQuickRoute = useCallback((moves: Move[]) => {
-    const repeatValue = selectedValues.length === 1 ? selectedValues[0] : null;
     setGame((current) => {
       setMoveHistory((history) => [...history.slice(-39), cloneGame(current)]);
       let next = current;
@@ -425,14 +447,10 @@ export default function Home() {
         next.message = `You moved ${distance} in one route${hits ? ` and captured ${hits} checker${hits > 1 ? "s" : ""}` : ""}.`;
         if (next.remaining.length === 0 || !anyLegalMove(next, "human")) next = endTurn(next);
       }
-      if (next.turn === "human" && repeatValue && next.remaining.includes(repeatValue)) {
-        setSelectedDice([next.remaining.indexOf(repeatValue)]);
-      } else {
-        setSelectedDice([]);
-      }
+      setSelectedSource(null);
       return next;
     });
-  }, [endTurn, selectedValues]);
+  }, [endTurn]);
 
   const roll = useCallback((player: Player) => {
     setGame((current) => {
@@ -466,6 +484,12 @@ export default function Home() {
   }, [endTurn, game, performMove, roll, screen, settings.difficulty]);
 
   useEffect(() => {
+    if (screen !== "game" || game.turn !== "human" || game.dice.length || game.winner || settings.deterministic) return;
+    const timer = setTimeout(() => roll("human"), 350);
+    return () => clearTimeout(timer);
+  }, [game.dice.length, game.turn, game.winner, roll, screen, settings.deterministic]);
+
+  useEffect(() => {
     try {
       const saved = window.localStorage.getItem("backgammon-studio-score");
       if (saved) {
@@ -492,7 +516,7 @@ export default function Home() {
     setGame(initialGame());
     setMoveHistory([]);
     setTurnHistory([]);
-    setSelectedDice([]);
+    setSelectedSource(null);
     setScreen("game");
   };
 
@@ -503,15 +527,23 @@ export default function Home() {
   };
 
   const handlePoint = (index: number) => {
-    if (game.turn !== "human" || !selectedValues.length) return;
-    const route = buildQuickRoute(game, "human", selectedValues, index);
-    if (route) performQuickRoute(route);
+    if (game.turn !== "human" || !game.remaining.length) return;
+    if (selectedSource !== null) {
+      const route = destinationRoutes.get(index);
+      if (route) return performQuickRoute(route.moves);
+      if (selectedSource === index) return setSelectedSource(null);
+    }
+    if (routeSources.has(index)) setSelectedSource(index);
   };
 
   const handleBar = () => {
-    if (game.turn !== "human" || !selectedValues.length) return;
-    const route = buildQuickRoute(game, "human", selectedValues, "bar");
-    if (route) performQuickRoute(route);
+    if (game.turn !== "human" || !game.remaining.length) return;
+    setSelectedSource((source) => source === "bar" ? null : "bar");
+  };
+
+  const handleOffDestination = () => {
+    const route = destinationRoutes.get("off");
+    if (route) performQuickRoute(route.moves);
   };
 
   const undoMove = () => {
@@ -520,7 +552,7 @@ export default function Home() {
     if (aiTimer.current) clearTimeout(aiTimer.current);
     setGame(cloneGame(previous));
     setMoveHistory((history) => history.slice(0, -1));
-    setSelectedDice([]);
+    setSelectedSource(null);
   };
 
   const undoTurn = () => {
@@ -530,7 +562,7 @@ export default function Home() {
     setGame(cloneGame(previous));
     setTurnHistory((history) => history.slice(0, -1));
     setMoveHistory([]);
-    setSelectedDice([]);
+    setSelectedSource(null);
   };
 
   if (screen === "setup") return <Setup settings={settings} setSettings={setSettings} onStart={startMatch} />;
@@ -541,7 +573,8 @@ export default function Home() {
     const point = game.points[index];
     const canMove = routeSources.has(index);
     const landsHere = routeDestinations.has(index);
-    return <button key={index} className={`board-point ${position} ${visualIndex % 2 ? "dark" : "light"} ${canMove ? "source" : ""} ${landsHere ? "landing" : ""}`} onClick={() => handlePoint(index)} aria-label={`Point ${index + 1}, ${point.count} ${point.owner ?? "empty"}${canMove ? ", click to move" : ""}${landsHere ? ", final destination" : ""}`}><span className="triangle" /><CheckerStack point={point} selected={canMove} />{canMove && <span className="move-badge">CLICK TO MOVE</span>}{landsHere && <span className="landing-badge">LANDS HERE</span>}<small>{index + 1}</small></button>;
+    const isSelected = selectedSource === index;
+    return <button key={index} className={`board-point ${position} ${visualIndex % 2 ? "dark" : "light"} ${canMove ? "source" : ""} ${isSelected ? "selected-source" : ""} ${landsHere ? "landing" : ""}`} onClick={() => handlePoint(index)} aria-label={`Point ${index + 1}, ${point.count} ${point.owner ?? "empty"}${canMove ? ", selectable checker" : ""}${landsHere ? ", reachable destination" : ""}`}><span className="triangle" /><CheckerStack point={point} selected={isSelected} />{canMove && !landsHere && <span className="move-badge">{isSelected ? "SELECTED" : "SELECT PIECE"}</span>}{landsHere && <span className="landing-badge">MOVE HERE</span>}<small>{index + 1}</small></button>;
   };
 
   const presetEditor = (player: Player, values: number[], setValues: (values: number[]) => void) => (
@@ -570,37 +603,35 @@ export default function Home() {
 
         <section className="table-wrap">
           <div className="turn-banner"><span>{game.winner ? `${PLAYER_LABEL[game.winner]} WON` : game.turn === "human" ? "YOUR TURN" : "RIVAL'S TURN"}</span><p>{game.message}</p></div>
-          <div className={`move-console ${selectedDice.length ? "die-chosen" : ""} ${selectedDice.length && !routeSources.size ? "no-route" : ""}`}>
+          <div className={`move-console ${selectedSource !== null ? "piece-chosen" : ""}`}>
             <div className="move-guide">
-              <span className={game.dice.length ? "done" : "current"}><b>1</b> Roll</span>
+              <span className={game.dice.length ? "done" : "current"}><b>1</b> Auto roll</span>
               <i>›</i>
-              <span className={game.dice.length && !selectedDice.length ? "current" : selectedDice.length ? "done" : ""}><b>2</b> Choose dice</span>
+              <span className={game.dice.length && selectedSource === null ? "current" : selectedSource !== null ? "done" : ""}><b>2</b> Select a piece</span>
               <i>›</i>
-              <span className={selectedDice.length ? "current" : ""}><b>3</b> Click a glowing checker</span>
+              <span className={selectedSource !== null ? "current" : ""}><b>3</b> Select destination</span>
             </div>
             <div className="dice-controls">
-              {game.turn === "human" && !game.dice.length && !game.winner && <button className="roll-button primary-roll" onClick={() => roll("human")}><span>ROLL</span> DICE</button>}
+              {game.turn === "human" && !game.dice.length && !game.winner && settings.deterministic && <button className="roll-button primary-roll" onClick={() => roll("human")}><span>ROLL</span> SELECTED DICE</button>}
+              {game.turn === "human" && !game.dice.length && !game.winner && !settings.deterministic && <div className="auto-roll-status"><i /><strong>Rolling automatically…</strong></div>}
               {game.turn === "human" && game.remaining.length > 0 && <>
                 <div className="dice-choice" aria-label="Available dice">
-                  {game.remaining.map((die, index) => {
-                    const chosenAt = selectedDice.indexOf(index);
-                    return <DieFace key={`${die}-${index}`} value={die} active={chosenAt >= 0} order={chosenAt >= 0 ? chosenAt + 1 : undefined} onClick={() => setSelectedDice((chosen) => chosen.includes(index) ? chosen.filter((item) => item !== index) : [...chosen, index])} label={chosenAt >= 0 ? `Remove die ${die} from route` : `Add die ${die} to route`} />;
-                  })}
+                  {game.remaining.map((die, index) => <DieFace key={`${die}-${index}`} value={die} label={`Available die ${die}`} />)}
                 </div>
                 <div className="move-instruction">
-                  {selectedDice.length ? <><strong>{routeSources.size ? `${selectedDice.length} dice · ${selectedValues.reduce((sum, die) => sum + die, 0)} spaces` : "That route is blocked"}</strong><span>{routeSources.size ? "Click a glowing checker to travel the full route and capture along the way." : "Try fewer dice or click them in a different order."}</span></> : <><strong>Choose one die or build a route</strong><span>Click several dice in travel order, then move once.</span></>}
+                  {selectedSource !== null ? <><strong>Now choose the destination</strong><span>Every reachable final point is marked in teal. Dice and captures are handled automatically.</span></> : <><strong>Select any marked checker</strong><span>We will show every place it can reach using any dice combination.</span></>}
                 </div>
-                <div className="route-actions"><button onClick={() => setSelectedDice(game.remaining.map((_, index) => index))}>USE ALL</button><button onClick={() => setSelectedDice([])} disabled={!selectedDice.length}>CLEAR</button></div>
+                {selectedSource !== null && <button className="change-piece" onClick={() => setSelectedSource(null)}>CHANGE PIECE</button>}
               </>}
               {game.turn === "ai" && <div className="move-instruction waiting"><strong>Rival is playing</strong><span>Your controls will return in a moment.</span></div>}
               {game.winner && <button className="roll-button primary-roll" onClick={startMatch}>REMATCH</button>}
             </div>
           </div>
           <div className="board-frame">
-            <div className="board top-row">{top.slice(0, 6).map((n, i) => pointButton(n, "top", i))}<div className="bar-lane"><button className={`bar-checkers ai ${routeSources.has("bar") ? "source" : ""}`} onClick={handleBar}>{game.bar.ai > 0 && <><i />{game.bar.ai > 1 && <b>{game.bar.ai}</b>}</>}</button></div>{top.slice(6).map((n, i) => pointButton(n, "top", i + 6))}</div>
+            <div className="board top-row">{top.slice(0, 6).map((n, i) => pointButton(n, "top", i))}<div className="bar-lane"><button className={`bar-checkers ai ${routeSources.has("bar") ? "source" : ""} ${selectedSource === "bar" ? "selected" : ""}`} onClick={handleBar}>{game.bar.ai > 0 && <><i />{game.bar.ai > 1 && <b>{game.bar.ai}</b>}</>}</button></div>{top.slice(6).map((n, i) => pointButton(n, "top", i + 6))}</div>
             <div className="board-mid"><span>{game.off.ai} OFF</span><b>BACKGAMMON</b><span>{game.off.human} OFF</span></div>
-            <div className="board bottom-row">{bottom.slice(0, 6).map((n, i) => pointButton(n, "bottom", i))}<div className="bar-lane"><button className={`bar-checkers human ${routeSources.has("bar") ? "source" : ""}`} onClick={handleBar}>{game.bar.human > 0 && <><i />{game.bar.human > 1 && <b>{game.bar.human}</b>}</>}</button></div>{bottom.slice(6).map((n, i) => pointButton(n, "bottom", i + 6))}</div>
-            {routeDestinations.has("off") && <div className="route-off-preview"><b>BEAR OFF</b><span>Final destination</span></div>}
+            <div className="board bottom-row">{bottom.slice(0, 6).map((n, i) => pointButton(n, "bottom", i))}<div className="bar-lane"><button className={`bar-checkers human ${routeSources.has("bar") ? "source" : ""} ${selectedSource === "bar" ? "selected" : ""}`} onClick={handleBar}>{game.bar.human > 0 && <><i />{game.bar.human > 1 && <b>{game.bar.human}</b>}</>}</button></div>{bottom.slice(6).map((n, i) => pointButton(n, "bottom", i + 6))}</div>
+            {routeDestinations.has("off") && <button className="route-off-preview" onClick={handleOffDestination}><b>BEAR OFF HERE</b><span>Final destination</span></button>}
           </div>
           <div className="borne-off-row" aria-label="Borne-off checker totals">
             <section className="off-tray rival-off">
