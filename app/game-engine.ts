@@ -138,7 +138,7 @@ export function allRoutesFromSource(game: GameState, player: Player, source: num
 export function expandDice(raw: number[], powerRepeats: boolean) {
   if (!powerRepeats) return [...raw];
   const counts = raw.reduce<Record<number, number>>((all, die) => ({ ...all, [die]: (all[die] || 0) + 1 }), {}), expanded: number[] = [];
-  for (const die of raw) for (let index = 0; index < (counts[die] > 1 ? counts[die] : 1); index += 1) expanded.push(die);
+  for (const die of raw) for (let index = 0; index < (counts[die] > 1 ? 2 : 1); index += 1) expanded.push(die);
   return expanded;
 }
 

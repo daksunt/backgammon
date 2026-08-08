@@ -77,7 +77,7 @@ function Setup({ settings, setSettings, onStart }: { settings: Settings; setSett
               <label><span>Your dice</span><select value={settings.humanDice} onChange={(e) => set("humanDice", Number(e.target.value))}>{[2, 3, 4].map(n => <option key={n}>{n}</option>)}</select></label>
               <label><span>Rival dice</span><select value={settings.aiDice} onChange={(e) => set("aiDice", Number(e.target.value))}>{[2, 3, 4].map(n => <option key={n}>{n}</option>)}</select></label>
             </div>}
-            <Toggle checked={settings.powerRepeats} onChange={(value) => set("powerRepeats", value)} label="Power repeats" note="Pairs play 4× · triples play 9×" />
+            <Toggle checked={settings.powerRepeats} onChange={(value) => set("powerRepeats", value)} label="Power repeats" note="Pairs play 4× · triples 6× · four 8×" />
             <Toggle checked={settings.deterministic} onChange={(value) => set("deterministic", value)} label="Director dice" note="Set both rolls before they happen" />
             <Toggle checked={settings.undo} onChange={(value) => set("undo", value)} label="Undo controls" note="Rewind one move or the whole turn" />
           </div>

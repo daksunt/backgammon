@@ -23,6 +23,7 @@
 - When one die reaches a destination, that single die always wins over every multi-die combination.
 - Otherwise the route consuming fewer dice wins; equal-length combinations use larger dice first. Captures break only otherwise-equal ties.
 - The destination label lists the exact dice that will be consumed, and each listed die is consumed once.
+- Power repeats double every die belonging to a matching group: two matches create 4 plays, three create 6, and four create 8. Non-matching dice remain single plays.
 
 ## Bearing off
 

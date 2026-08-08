@@ -96,9 +96,10 @@ test("a destination route consumes its listed dice exactly once and preserves ch
 
 test("power-repeat expansion is deterministic for singles, pairs, triples, and four-of-a-kind", () => {
   assert.deepEqual(expandDice([2, 5], true), [2, 5]);
-  assert.equal(expandDice([4, 4], true).length, 4);
-  assert.equal(expandDice([3, 3, 3], true).length, 9);
-  assert.equal(expandDice([6, 6, 6, 6], true).length, 16);
+  assert.deepEqual(expandDice([4, 4], true), [4, 4, 4, 4]);
+  assert.deepEqual(expandDice([3, 3, 3], true), [3, 3, 3, 3, 3, 3]);
+  assert.deepEqual(expandDice([6, 6, 6, 6], true), [6, 6, 6, 6, 6, 6, 6, 6]);
+  assert.deepEqual(expandDice([5, 5, 2], true), [5, 5, 5, 5, 2]);
   assert.deepEqual(rollDice(3, [6, 2, 4], true, false).raw, [6, 2, 4]);
 });
 

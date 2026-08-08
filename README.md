@@ -7,7 +7,7 @@ A polished, single-player backgammon game for the web. Play a classic match or t
 - Complete checker movement, forced bar entry, hits, blocks, bearing off, and legal dice-use priority
 - Easy, medium, and hard computer rivals
 - Independent 2–4 dice settings for each player
-- Power repeats: pairs create four plays and triples create nine
+- Power repeats: matching dice are doubled—pairs create 4 plays, triples 6, and four-of-a-kind 8
 - Director Dice for choosing both players' rolls in advance
 - Undo one move or rewind a full turn
 - Responsive desktop, tablet, and mobile board
