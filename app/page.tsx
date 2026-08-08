@@ -357,20 +357,34 @@ export default function Home() {
   const [aiPreset, setAiPreset] = useState([5, 2, 3, 1]);
   const [moveHistory, setMoveHistory] = useState<GameState[]>([]);
   const [turnHistory, setTurnHistory] = useState<GameState[]>([]);
+  const [matchScore, setMatchScore] = useState({ human: 0, ai: 0 });
   const turnStart = useRef<GameState | null>(null);
   const aiTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scoreRecorded = useRef(false);
 
   const diceCount = (player: Player) => settings.customDice ? (player === "human" ? settings.humanDice : settings.aiDice) : 2;
   const selectedValues = selectedDice.map((index) => game.remaining[index]).filter((die): die is number => die !== undefined);
-  const routeSources = useMemo(() => {
+  const routePreview = useMemo(() => {
     const sources = new Set<number | "bar">();
-    if (game.turn !== "human" || !selectedValues.length) return sources;
-    if (buildQuickRoute(game, "human", selectedValues, "bar")) sources.add("bar");
+    const destinations = new Set<number | "off">();
+    if (game.turn !== "human" || !selectedValues.length) return { sources, destinations };
+    const barRoute = buildQuickRoute(game, "human", selectedValues, "bar");
+    if (barRoute) {
+      sources.add("bar");
+      destinations.add(barRoute.at(-1)!.to);
+    }
     game.points.forEach((point, index) => {
-      if (point.owner === "human" && buildQuickRoute(game, "human", selectedValues, index)) sources.add(index);
+      if (point.owner !== "human") return;
+      const route = buildQuickRoute(game, "human", selectedValues, index);
+      if (route) {
+        sources.add(index);
+        destinations.add(route.at(-1)!.to);
+      }
     });
-    return sources;
+    return { sources, destinations };
   }, [game, selectedValues]);
+  const routeSources = routePreview.sources;
+  const routeDestinations = routePreview.destinations;
 
   const endTurn = useCallback((current: GameState) => {
     if (current.winner) return current;
@@ -451,12 +465,41 @@ export default function Home() {
     return () => { if (aiTimer.current) clearTimeout(aiTimer.current); };
   }, [endTurn, game, performMove, roll, screen, settings.difficulty]);
 
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem("backgammon-studio-score");
+      if (saved) {
+        const parsed = JSON.parse(saved) as { human?: number; ai?: number };
+        setMatchScore({ human: Math.max(0, parsed.human ?? 0), ai: Math.max(0, parsed.ai ?? 0) });
+      }
+    } catch {
+      // A match still works when browser storage is unavailable.
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!game.winner || scoreRecorded.current) return;
+    scoreRecorded.current = true;
+    setMatchScore((score) => {
+      const next = { ...score, [game.winner!]: score[game.winner!] + 1 };
+      try { window.localStorage.setItem("backgammon-studio-score", JSON.stringify(next)); } catch { /* local-only persistence is optional */ }
+      return next;
+    });
+  }, [game.winner]);
+
   const startMatch = () => {
+    scoreRecorded.current = false;
     setGame(initialGame());
     setMoveHistory([]);
     setTurnHistory([]);
     setSelectedDice([]);
     setScreen("game");
+  };
+
+  const resetMatchScore = () => {
+    const empty = { human: 0, ai: 0 };
+    setMatchScore(empty);
+    try { window.localStorage.setItem("backgammon-studio-score", JSON.stringify(empty)); } catch { /* local-only persistence is optional */ }
   };
 
   const handlePoint = (index: number) => {
@@ -497,7 +540,8 @@ export default function Home() {
   const pointButton = (index: number, position: "top" | "bottom", visualIndex: number) => {
     const point = game.points[index];
     const canMove = routeSources.has(index);
-    return <button key={index} className={`board-point ${position} ${visualIndex % 2 ? "dark" : "light"} ${canMove ? "source" : ""}`} onClick={() => handlePoint(index)} aria-label={`Point ${index + 1}, ${point.count} ${point.owner ?? "empty"}${canMove ? ", click to move" : ""}`}><span className="triangle" /><CheckerStack point={point} selected={canMove} />{canMove && <span className="move-badge">MOVE</span>}<small>{index + 1}</small></button>;
+    const landsHere = routeDestinations.has(index);
+    return <button key={index} className={`board-point ${position} ${visualIndex % 2 ? "dark" : "light"} ${canMove ? "source" : ""} ${landsHere ? "landing" : ""}`} onClick={() => handlePoint(index)} aria-label={`Point ${index + 1}, ${point.count} ${point.owner ?? "empty"}${canMove ? ", click to move" : ""}${landsHere ? ", final destination" : ""}`}><span className="triangle" /><CheckerStack point={point} selected={canMove} />{canMove && <span className="move-badge">CLICK TO MOVE</span>}{landsHere && <span className="landing-badge">LANDS HERE</span>}<small>{index + 1}</small></button>;
   };
 
   const presetEditor = (player: Player, values: number[], setValues: (values: number[]) => void) => (
@@ -508,7 +552,11 @@ export default function Home() {
     <main className="game-shell">
       <nav className="game-nav">
         <button className="brand compact" onClick={() => setScreen("setup")}><span className="brand-mark"><i /><i /></span><b>BACK<span>GAMMON</span></b></button>
-        <div className="match-label"><span>SOLO MATCH</span><b>GAME {Math.ceil(game.turnNumber / 2)}</b></div>
+        <div className="match-score" aria-label={`Match score: You ${matchScore.human}, Rival ${matchScore.ai}`}>
+          <span>MATCH SCORE</span>
+          <div><small>YOU</small><b>{matchScore.human}</b><i>—</i><b>{matchScore.ai}</b><small>RIVAL</small></div>
+          <button onClick={resetMatchScore} disabled={matchScore.human === 0 && matchScore.ai === 0}>RESET</button>
+        </div>
         <button className="new-match" onClick={() => setScreen("setup")}>NEW MATCH</button>
       </nav>
       <section className="play-layout">
@@ -552,6 +600,17 @@ export default function Home() {
             <div className="board top-row">{top.slice(0, 6).map((n, i) => pointButton(n, "top", i))}<div className="bar-lane"><button className={`bar-checkers ai ${routeSources.has("bar") ? "source" : ""}`} onClick={handleBar}>{game.bar.ai > 0 && <><i />{game.bar.ai > 1 && <b>{game.bar.ai}</b>}</>}</button></div>{top.slice(6).map((n, i) => pointButton(n, "top", i + 6))}</div>
             <div className="board-mid"><span>{game.off.ai} OFF</span><b>BACKGAMMON</b><span>{game.off.human} OFF</span></div>
             <div className="board bottom-row">{bottom.slice(0, 6).map((n, i) => pointButton(n, "bottom", i))}<div className="bar-lane"><button className={`bar-checkers human ${routeSources.has("bar") ? "source" : ""}`} onClick={handleBar}>{game.bar.human > 0 && <><i />{game.bar.human > 1 && <b>{game.bar.human}</b>}</>}</button></div>{bottom.slice(6).map((n, i) => pointButton(n, "bottom", i + 6))}</div>
+            {routeDestinations.has("off") && <div className="route-off-preview"><b>BEAR OFF</b><span>Final destination</span></div>}
+          </div>
+          <div className="borne-off-row" aria-label="Borne-off checker totals">
+            <section className="off-tray rival-off">
+              <div className="off-tray-title"><span>RIVAL HOME</span><strong>{game.off.ai}<small>/15</small></strong></div>
+              <div className="off-slots" aria-label={`${game.off.ai} rival checkers borne off`}>{Array.from({ length: 15 }, (_, index) => <i key={index} className={index < game.off.ai ? "filled" : ""} />)}</div>
+            </section>
+            <section className="off-tray your-off">
+              <div className="off-tray-title"><span>YOUR HOME</span><strong>{game.off.human}<small>/15</small></strong></div>
+              <div className="off-slots" aria-label={`${game.off.human} of your checkers borne off`}>{Array.from({ length: 15 }, (_, index) => <i key={index} className={index < game.off.human ? "filled" : ""} />)}</div>
+            </section>
           </div>
         </section>
 
