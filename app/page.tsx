@@ -3,336 +3,23 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./game.css";
 
-type Player = "human" | "ai";
-type Difficulty = "easy" | "medium" | "hard";
-type Point = { owner: Player | null; count: number };
-type Move = { from: number | "bar"; to: number | "off"; die: number; hit?: boolean };
-type GameState = {
-  points: Point[];
-  bar: Record<Player, number>;
-  off: Record<Player, number>;
-  turn: Player;
-  dice: number[];
-  remaining: number[];
-  winner: Player | null;
-  turnNumber: number;
-  message: string;
-};
-type Settings = {
-  difficulty: Difficulty;
-  customDice: boolean;
-  humanDice: number;
-  aiDice: number;
-  powerRepeats: boolean;
-  deterministic: boolean;
-  undo: boolean;
-};
-
-const DEFAULT_SETTINGS: Settings = {
-  difficulty: "medium",
-  customDice: true,
-  humanDice: 2,
-  aiDice: 2,
-  powerRepeats: true,
-  deterministic: false,
-  undo: true,
-};
-
-const PLAYER_LABEL: Record<Player, string> = { human: "You", ai: "Rival" };
-
-function emptyPoints(): Point[] {
-  return Array.from({ length: 24 }, () => ({ owner: null, count: 0 }));
-}
-
-function initialGame(): GameState {
-  const points = emptyPoints();
-  const place = (index: number, owner: Player, count: number) => (points[index] = { owner, count });
-  place(23, "human", 2);
-  place(12, "human", 5);
-  place(7, "human", 3);
-  place(5, "human", 5);
-  place(0, "ai", 2);
-  place(11, "ai", 5);
-  place(16, "ai", 3);
-  place(18, "ai", 5);
-  return {
-    points,
-    bar: { human: 0, ai: 0 },
-    off: { human: 0, ai: 0 },
-    turn: "human",
-    dice: [],
-    remaining: [],
-    winner: null,
-    turnNumber: 1,
-    message: "Your opening roll.",
-  };
-}
-
-function cloneGame(game: GameState): GameState {
-  return {
-    ...game,
-    points: game.points.map((point) => ({ ...point })),
-    bar: { ...game.bar },
-    off: { ...game.off },
-    dice: [...game.dice],
-    remaining: [...game.remaining],
-  };
-}
-
-const opponent = (player: Player): Player => (player === "human" ? "ai" : "human");
-const direction = (player: Player) => (player === "human" ? -1 : 1);
-const entryPoint = (player: Player, die: number) => (player === "human" ? 24 - die : die - 1);
-
-function canBearOff(game: GameState, player: Player) {
-  if (game.bar[player] > 0) return false;
-  return game.points.every((point, index) => {
-    if (point.owner !== player) return true;
-    return player === "human" ? index <= 5 : index >= 18;
-  });
-}
-
-function legalMovesForDie(game: GameState, player: Player, die: number): Move[] {
-  const rival = opponent(player);
-  if (game.bar[player] > 0) {
-    const to = entryPoint(player, die);
-    const target = game.points[to];
-    if (target.owner === rival && target.count >= 2) return [];
-    return [{ from: "bar", to, die, hit: target.owner === rival && target.count === 1 }];
-  }
-
-  const moves: Move[] = [];
-  const bearing = canBearOff(game, player);
-  for (let from = 0; from < 24; from += 1) {
-    const source = game.points[from];
-    if (source.owner !== player || source.count === 0) continue;
-    const to = from + direction(player) * die;
-    if (to >= 0 && to < 24) {
-      const target = game.points[to];
-      if (!(target.owner === rival && target.count >= 2)) {
-        moves.push({ from, to, die, hit: target.owner === rival && target.count === 1 });
-      }
-      continue;
-    }
-    if (!bearing) continue;
-    const exact = player === "human" ? from === die - 1 : 24 - from === die;
-    const fartherChecker = game.points.some((point, index) => {
-      if (point.owner !== player) return false;
-      return player === "human" ? index > from : index < from;
-    });
-    if (exact || !fartherChecker) moves.push({ from, to: "off", die });
-  }
-  return moves;
-}
-
-function applyMove(game: GameState, player: Player, move: Move): GameState {
-  const next = cloneGame(game);
-  const rival = opponent(player);
-  if (move.from === "bar") next.bar[player] -= 1;
-  else {
-    const source = next.points[move.from];
-    source.count -= 1;
-    if (source.count === 0) source.owner = null;
-  }
-  if (move.to === "off") next.off[player] += 1;
-  else {
-    const target = next.points[move.to];
-    if (target.owner === rival && target.count === 1) {
-      next.bar[rival] += 1;
-      target.owner = player;
-      target.count = 1;
-    } else {
-      target.owner = player;
-      target.count += 1;
-    }
-  }
-  const dieIndex = next.remaining.indexOf(move.die);
-  if (dieIndex >= 0) next.remaining.splice(dieIndex, 1);
-  if (next.off[player] === 15) {
-    next.winner = player;
-    next.message = `${PLAYER_LABEL[player]} bear off all 15 checkers.`;
-  } else if (move.hit) {
-    next.message = `${PLAYER_LABEL[player]} hit a blot with ${move.die}.`;
-  } else if (move.to === "off") {
-    next.message = `${PLAYER_LABEL[player]} bear off a checker.`;
-  } else {
-    next.message = `${PLAYER_LABEL[player]} played ${move.die}.`;
-  }
-  return next;
-}
-
-function uniqueDice(dice: number[]) {
-  return [...new Set(dice)];
-}
-
-function anyLegalMove(game: GameState, player: Player) {
-  return uniqueDice(game.remaining).some((die) => legalMovesForDie(game, player, die).length > 0);
-}
-
-function maxPlayableDice(game: GameState, player: Player, memo = new Map<string, number>()): number {
-  if (!game.remaining.length) return 0;
-  const boardKey = game.points.map((point) => point.owner ? `${point.owner[0]}${point.count}` : "-").join("|");
-  const key = `${boardKey}/${game.bar.human},${game.bar.ai}/${game.remaining.slice().sort().join("")}`;
-  const cached = memo.get(key);
-  if (cached !== undefined) return cached;
-  let best = 0;
-  for (const die of uniqueDice(game.remaining)) {
-    for (const move of legalMovesForDie(game, player, die)) {
-      best = Math.max(best, 1 + maxPlayableDice(applyMove(game, player, move), player, memo));
-    }
-  }
-  memo.set(key, best);
-  return best;
-}
-
-function ruleCompliantMoves(game: GameState, player: Player): Move[] {
-  const candidates = uniqueDice(game.remaining).flatMap((die) => legalMovesForDie(game, player, die));
-  if (candidates.length < 2 || game.remaining.length > 4) return candidates;
-  const memo = new Map<string, number>();
-  const scored = candidates.map((move) => ({ move, plays: 1 + maxPlayableDice(applyMove(game, player, move), player, memo) }));
-  const maximum = Math.max(...scored.map(({ plays }) => plays));
-  let allowed = scored.filter(({ plays }) => plays === maximum).map(({ move }) => move);
-  if (maximum === 1 && uniqueDice(game.remaining).length > 1) {
-    const highest = Math.max(...allowed.map((move) => move.die));
-    allowed = allowed.filter((move) => move.die === highest);
-  }
-  return allowed;
-}
-
-function buildQuickRoute(game: GameState, player: Player, dice: number[], source: number | "bar"): Move[] | null {
-  if (!dice.length) return null;
-  let preview = cloneGame(game);
-  let currentSource: number | "bar" | "off" = source;
-  const route: Move[] = [];
-  for (const die of dice) {
-    if (currentSource === "off") break;
-    const move = legalMovesForDie(preview, player, die).find((candidate) => candidate.from === currentSource);
-    if (!move) return null;
-    route.push(move);
-    preview = applyMove(preview, player, move);
-    currentSource = move.to;
-    if (preview.winner) break;
-  }
-  return route.length ? route : null;
-}
-
-type RouteOption = { to: number | "off"; moves: Move[]; hits: number };
-
-function prefersRoute(candidate: RouteOption, existing: RouteOption) {
-  if (candidate.hits !== existing.hits) return candidate.hits > existing.hits;
-  const candidateDice = candidate.moves.map((move) => move.die);
-  const existingDice = existing.moves.map((move) => move.die);
-  const length = Math.max(candidateDice.length, existingDice.length);
-  for (let index = 0; index < length; index += 1) {
-    const candidateDie = candidateDice[index] ?? 0;
-    const existingDie = existingDice[index] ?? 0;
-    if (candidateDie !== existingDie) return candidateDie > existingDie;
-  }
-  return candidate.moves.length < existing.moves.length;
-}
-
-function allRoutesFromSource(game: GameState, player: Player, source: number | "bar"): RouteOption[] {
-  const bestByDestination = new Map<string, RouteOption>();
-  const visit = (preview: GameState, currentSource: number | "bar", route: Move[], hits: number) => {
-    for (const die of uniqueDice(preview.remaining).sort((a, b) => b - a)) {
-      const move = legalMovesForDie(preview, player, die).find((candidate) => candidate.from === currentSource);
-      if (!move) continue;
-      const moves = [...route, move];
-      const nextHits = hits + (move.hit ? 1 : 0);
-      const option: RouteOption = { to: move.to, moves, hits: nextHits };
-      const key = String(move.to);
-      const existing = bestByDestination.get(key);
-      if (!existing || prefersRoute(option, existing)) {
-        bestByDestination.set(key, option);
-      }
-      if (move.to !== "off") {
-        const next = applyMove(preview, player, move);
-        if (!next.winner) visit(next, move.to, moves, nextHits);
-      }
-    }
-  };
-  visit(game, source, [], 0);
-  return [...bestByDestination.values()];
-}
-
-function expandDice(raw: number[], powerRepeats: boolean) {
-  if (!powerRepeats) return raw;
-  const counts = raw.reduce<Record<number, number>>((all, die) => ({ ...all, [die]: (all[die] || 0) + 1 }), {});
-  const expanded: number[] = [];
-  for (const die of raw) {
-    const repeats = counts[die] > 1 ? counts[die] : 1;
-    for (let i = 0; i < repeats; i += 1) expanded.push(die);
-  }
-  return expanded;
-}
-
-function rollDice(count: number, preset: number[], deterministic: boolean, powerRepeats: boolean) {
-  const raw = Array.from({ length: count }, (_, index) =>
-    deterministic ? preset[index] ?? 1 : Math.floor(Math.random() * 6) + 1,
-  );
-  return { raw, expanded: expandDice(raw, powerRepeats) };
-}
-
-function positionScore(game: GameState, player: Player) {
-  const rival = opponent(player);
-  let score = game.off[player] * 120 - game.off[rival] * 110;
-  score -= game.bar[player] * 42;
-  score += game.bar[rival] * 38;
-  game.points.forEach((point, index) => {
-    if (!point.owner) return;
-    const progress = point.owner === "human" ? 23 - index : index;
-    const value = progress * point.count;
-    score += point.owner === player ? value : -value * 0.9;
-    if (point.count >= 2) score += point.owner === player ? 8 : -7;
-    if (point.count === 1) score += point.owner === player ? -5 : 4;
-  });
-  return score;
-}
-
-function chooseAiMove(game: GameState, difficulty: Difficulty): Move | null {
-  const moves = ruleCompliantMoves(game, "ai");
-  if (!moves.length) return null;
-  if (difficulty === "easy") return moves[Math.floor(Math.random() * moves.length)];
-  const scored = moves.map((move) => {
-    const after = applyMove(game, "ai", move);
-    let score = positionScore(after, "ai") + (move.hit ? 24 : 0) + (move.to === "off" ? 32 : 0);
-    if (difficulty === "hard") {
-      const possibleReplies = [1, 2, 3, 4, 5, 6].flatMap((die) => legalMovesForDie(after, "human", die));
-      const worstReply = possibleReplies.reduce((worst, reply) => {
-        const replyState = applyMove({ ...after, remaining: [reply.die] }, "human", reply);
-        return Math.max(worst, positionScore(replyState, "human"));
-      }, 0);
-      score -= worstReply * 0.14;
-    }
-    return { move, score: score + Math.random() * 0.4 };
-  });
-  scored.sort((a, b) => b.score - a.score);
-  return scored[0].move;
-}
-
-function pipCount(game: GameState, player: Player) {
-  let total = game.bar[player] * 25;
-  game.points.forEach((point, index) => {
-    if (point.owner === player) total += point.count * (player === "human" ? index + 1 : 24 - index);
-  });
-  return total;
-}
-
-function victoryPoints(game: GameState, winner: Player) {
-  const loser = opponent(winner);
-  if (game.off[loser] > 0) return 1;
-  const loserInWinnersHome = game.bar[loser] > 0 || game.points.some((point, index) => {
-    if (point.owner !== loser) return false;
-    return winner === "human" ? index <= 5 : index >= 18;
-  });
-  return loserInWinnersHome ? 3 : 2;
-}
-
-function victoryName(points: number) {
-  if (points === 3) return "BACKGAMMON";
-  if (points === 2) return "MARS · GAMMON";
-  return "SINGLE WIN";
-}
-
+import {
+  DEFAULT_SETTINGS,
+  PLAYER_LABEL,
+  allRoutesFromSource,
+  anyLegalMove,
+  applyMove,
+  canBearOff,
+  chooseAiMove,
+  cloneGame,
+  initialGame,
+  opponent,
+  pipCount,
+  rollDice,
+  victoryName,
+  victoryPoints,
+} from "./game-engine";
+import type { Difficulty, GameState, Move, Player, Point, RouteOption, Settings } from "./game-engine";
 function DieFace({ value, active, spent, onClick, label, order }: { value: number; active?: boolean; spent?: boolean; onClick?: () => void; label?: string; order?: number }) {
   const dots: Record<number, number[]> = { 1: [4], 2: [0, 8], 3: [0, 4, 8], 4: [0, 2, 6, 8], 5: [0, 2, 4, 6, 8], 6: [0, 2, 3, 5, 6, 8] };
   return (
@@ -358,7 +45,7 @@ function Toggle({ checked, onChange, label, note }: { checked: boolean; onChange
   return (
     <label className="toggle-row">
       <span><strong>{label}</strong><small>{note}</small></span>
-      <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
+      <input type="checkbox" aria-label={label} checked={checked} onChange={(event) => onChange(event.target.checked)} />
       <i aria-hidden="true" />
     </label>
   );
@@ -417,7 +104,7 @@ export default function Home() {
   const aiTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scoreRecorded = useRef(false);
 
-  const diceCount = (player: Player) => settings.customDice ? (player === "human" ? settings.humanDice : settings.aiDice) : 2;
+  const diceCount = useCallback((player: Player) => settings.customDice ? (player === "human" ? settings.humanDice : settings.aiDice) : 2, [settings.aiDice, settings.customDice, settings.humanDice]);
   const routePreview = useMemo(() => {
     const sourceRoutes = new Map<number | "bar", RouteOption[]>();
     if (game.turn !== "human" || !game.remaining.length) return sourceRoutes;
@@ -436,7 +123,6 @@ export default function Home() {
   const routeSources = new Set(routePreview.keys());
   const selectedRoutes = selectedSource === null ? [] : routePreview.get(selectedSource) ?? [];
   const destinationRoutes = new Map(selectedRoutes.map((route) => [route.to, route]));
-  const routeDestinations = new Set(destinationRoutes.keys());
 
   const endTurn = useCallback((current: GameState) => {
     if (current.winner) return current;
@@ -497,7 +183,7 @@ export default function Home() {
       }
       return next;
     });
-  }, [aiPreset, endTurn, humanPreset, settings]);
+  }, [aiPreset, diceCount, endTurn, humanPreset, settings.deterministic, settings.powerRepeats]);
 
   useEffect(() => {
     if (screen !== "game" || game.turn !== "ai" || game.winner) return;
@@ -520,15 +206,17 @@ export default function Home() {
   }, [game.dice.length, game.turn, game.winner, roll, screen, settings.deterministic]);
 
   useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       const saved = window.localStorage.getItem("backgammon-studio-score");
       if (saved) {
         const parsed = JSON.parse(saved) as { human?: number; ai?: number };
-        setMatchScore({ human: Math.max(0, parsed.human ?? 0), ai: Math.max(0, parsed.ai ?? 0) });
+        timer = setTimeout(() => setMatchScore({ human: Math.max(0, parsed.human ?? 0), ai: Math.max(0, parsed.ai ?? 0) }), 0);
       }
     } catch {
       // A match still works when browser storage is unavailable.
     }
+    return () => { if (timer) clearTimeout(timer); };
   }, []);
 
   useEffect(() => {
