@@ -8,7 +8,7 @@ A polished, single-player backgammon game for the web. Play a classic match or t
 - Easy, medium, and hard computer rivals
 - Independent 2–4 dice settings for each player
 - Power repeats: matching dice are doubled—pairs create 4 plays, triples 6, and four-of-a-kind 8
-- Director Dice for choosing both players' rolls in advance
+- Director Dice for independently fixing or randomizing each die for both players
 - Undo one move or rewind a full turn
 - Responsive desktop, tablet, and mobile board
 - Room-code multiplayer entry point reserved for the next phase

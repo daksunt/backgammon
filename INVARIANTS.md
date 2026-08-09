@@ -24,6 +24,7 @@
 - Otherwise the route consuming fewer dice wins; equal-length combinations use larger dice first. Captures break only otherwise-equal ties.
 - The destination label lists the exact dice that will be consumed, and each listed die is consumed once.
 - Power repeats double every die belonging to a matching group: two matches create 4 plays, three create 6, and four create 8. Non-matching dice remain single plays.
+- In Director Dice mode, every selector independently accepts a fixed value or Random; Random is resolved to a valid 1–6 roll before it enters game state.
 
 ## Bearing off
 

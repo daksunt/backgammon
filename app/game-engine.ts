@@ -142,8 +142,11 @@ export function expandDice(raw: number[], powerRepeats: boolean) {
   return expanded;
 }
 
-export function rollDice(count: number, preset: number[], deterministic: boolean, powerRepeats: boolean) {
-  const raw = Array.from({ length: count }, (_, index) => deterministic ? preset[index] ?? 1 : Math.floor(Math.random() * 6) + 1);
+export function rollDice(count: number, preset: number[], deterministic: boolean, powerRepeats: boolean, random = Math.random) {
+  const raw = Array.from({ length: count }, (_, index) => {
+    const selected = preset[index];
+    return deterministic && Number.isInteger(selected) && selected >= 1 && selected <= 6 ? selected : Math.floor(random() * 6) + 1;
+  });
   return { raw, expanded: expandDice(raw, powerRepeats) };
 }
 

@@ -79,7 +79,7 @@ function Setup({ settings, setSettings, onStart }: { settings: Settings; setSett
               <label><span>Rival dice</span><select value={settings.aiDice} onChange={(e) => set("aiDice", Number(e.target.value))}>{[2, 3, 4].map(n => <option key={n}>{n}</option>)}</select></label>
             </div>}
             <Toggle checked={settings.powerRepeats} onChange={(value) => set("powerRepeats", value)} label="Power repeats" note="Pairs play 4× · triples 6× · four 8×" />
-            <Toggle checked={settings.deterministic} onChange={(value) => set("deterministic", value)} label="Director dice" note="Set both rolls before they happen" />
+            <Toggle checked={settings.deterministic} onChange={(value) => set("deterministic", value)} label="Director dice" note="Mix fixed and random dice for both sides" />
             <Toggle checked={settings.undo} onChange={(value) => set("undo", value)} label="Undo controls" note="Rewind one move or the whole turn" />
           </div>
           <button className="start-button" onClick={onStart}>START MATCH <span>→</span></button>
@@ -96,8 +96,8 @@ export default function Home() {
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   const [game, setGame] = useState<GameState>(() => initialGame());
   const [selectedSource, setSelectedSource] = useState<number | "bar" | null>(null);
-  const [humanPreset, setHumanPreset] = useState([6, 3, 4, 2]);
-  const [aiPreset, setAiPreset] = useState([5, 2, 3, 1]);
+  const [humanPreset, setHumanPreset] = useState([0, 0, 0, 0]);
+  const [aiPreset, setAiPreset] = useState([0, 0, 0, 0]);
   const [moveHistory, setMoveHistory] = useState<GameState[]>([]);
   const [turnHistory, setTurnHistory] = useState<GameState[]>([]);
   const [matchScore, setMatchScore] = useState({ human: 0, ai: 0 });
@@ -314,7 +314,7 @@ export default function Home() {
   };
 
   const presetEditor = (player: Player, values: number[], setValues: (values: number[]) => void) => (
-    <div className="preset-row"><span>{PLAYER_LABEL[player]}</span>{values.slice(0, diceCount(player)).map((value, index) => <select key={index} value={value} onChange={(e) => { const next = [...values]; next[index] = Number(e.target.value); setValues(next); }}>{[1, 2, 3, 4, 5, 6].map(n => <option key={n}>{n}</option>)}</select>)}</div>
+    <div className="preset-row"><span>{PLAYER_LABEL[player]}</span>{values.slice(0, diceCount(player)).map((value, index) => <select key={index} value={value} aria-label={`${PLAYER_LABEL[player]} die ${index + 1}`} onChange={(e) => { const next = [...values]; next[index] = Number(e.target.value); setValues(next); }}><option value={0}>Random</option>{[1, 2, 3, 4, 5, 6].map(n => <option key={n} value={n}>{n}</option>)}</select>)}</div>
   );
 
   return (
@@ -401,7 +401,7 @@ export default function Home() {
           </div>
           {game.turn === "human" && !game.dice.length && !game.winner && settings.deterministic && <button className="roll-button primary-roll sidebar-roll" onClick={() => roll("human")}><span>ROLL</span> SELECTED DICE</button>}
           {game.turn === "human" && !game.dice.length && !game.winner && !settings.deterministic && <div className="auto-roll-status sidebar-auto-roll"><i /><strong>Rolling automatically…</strong></div>}
-          {settings.deterministic && <div className="director-panel"><div><span>DIRECTOR DICE</span><small>Set the next rolls</small></div>{presetEditor("human", humanPreset, setHumanPreset)}{presetEditor("ai", aiPreset, setAiPreset)}</div>}
+          {settings.deterministic && <div className="director-panel"><div><span>DIRECTOR DICE</span><small>Choose a number or Random</small></div>{presetEditor("human", humanPreset, setHumanPreset)}{presetEditor("ai", aiPreset, setAiPreset)}</div>}
           {settings.undo && <div className="undo-panel"><button onClick={undoMove} disabled={!moveHistory.length}>↶ <span>UNDO MOVE</span></button><button onClick={undoTurn} disabled={!turnHistory.length}>↶ <span>UNDO TURN</span></button></div>}
           <div className="rules-note"><span>i</span><p><b>{settings.customDice ? `${settings.humanDice} vs ${settings.aiDice} dice` : "Classic dice"}</b>{settings.powerRepeats ? "Power repeats are on." : "Standard rolls."} Bar entry always comes first.</p></div>
         </aside>

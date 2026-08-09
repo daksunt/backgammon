@@ -101,6 +101,8 @@ test("power-repeat expansion is deterministic for singles, pairs, triples, and f
   assert.deepEqual(expandDice([6, 6, 6, 6], true), [6, 6, 6, 6, 6, 6, 6, 6]);
   assert.deepEqual(expandDice([5, 5, 2], true), [5, 5, 5, 5, 2]);
   assert.deepEqual(rollDice(3, [6, 2, 4], true, false).raw, [6, 2, 4]);
+  assert.deepEqual(rollDice(4, [6, 0, 2, 0], true, false, () => 0.5).raw, [6, 4, 2, 4]);
+  assert.deepEqual(rollDice(2, [6, 6], false, false, () => 0).raw, [1, 1]);
 });
 
 test("win scoring distinguishes single, Mars/Gammon, and Backgammon", () => {
